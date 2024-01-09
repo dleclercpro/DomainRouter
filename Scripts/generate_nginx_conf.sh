@@ -1,16 +1,15 @@
 #!/bin/bash
 
-# Path to the .env file with domains and ports
-env_file=".env"
+# Get the directory where the script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-# Path to the NGINX template file
-template_conf="nginx.template.conf"
-
-# Output path for the final NGINX configuration
-final_conf="nginx.conf"
+# Paths relative to the script location
+ENV_FILE="$SCRIPT_DIR/../.env"
+TEMPLATE_CONF="$SCRIPT_DIR/../Conf/nginx.template.conf"
+FINAL_CONF="$SCRIPT_DIR/../nginx.conf"
 
 # Start with an empty configuration file
-echo "" > $final_conf
+echo "" > $FINAL_CONF
 
 # Function to generate server block from template
 generate_server_block() {
@@ -22,10 +21,10 @@ generate_server_block() {
     echo "Generating server block for: $domain:$port"
 
     # Replace placeholders in template
-    sed "s/{{SUB_DOMAIN}}/$domain/g; s/{{PORT}}/$port/g" $template_conf > $temp
+    sed "s/{{SUB_DOMAIN}}/$domain/g; s/{{PORT}}/$port/g" $TEMPLATE_CONF > $temp
 
     # Append to final configuration file
-    cat $temp >> $final_conf
+    cat $temp >> $FINAL_CONF
 
     # Clean up
     rm $temp
@@ -36,6 +35,6 @@ while IFS='=' read -r domain port || [[ -n "$domain" ]]; do
     if [[ ! -z "$domain" && ! -z "$port" ]]; then
         generate_server_block $domain $port
     fi
-done < "$env_file"
+done < "$ENV_FILE"
 
-echo "Final NGINX configuration generated at: $final_conf"
+echo "Final NGINX configuration generated at: $FINAL_CONF"
