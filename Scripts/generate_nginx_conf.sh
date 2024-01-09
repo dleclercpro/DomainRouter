@@ -6,7 +6,7 @@ SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 # Paths relative to the script location
 ENV_FILE="$SCRIPT_DIR/../.env"
 TEMPLATE_CONF="$SCRIPT_DIR/../Conf/nginx.template.conf"
-FINAL_CONF="$SCRIPT_DIR/../nginx.conf"
+FINAL_CONF="$SCRIPT_DIR/../Conf/nginx.conf"
 
 # Start with an empty configuration file
 echo "" > $FINAL_CONF
