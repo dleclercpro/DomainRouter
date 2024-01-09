@@ -1,4 +1,6 @@
-# Description
+# SubDomainRouter
+
+## Description
 
 This repository contains the configuration and setup for a main reverse proxy server, designed to route traffic to multiple containerized applications, each hosted on its own sub-domain. The reverse proxy is managed by NGINX, and each application is set up with SSL termination handled internally.
 
