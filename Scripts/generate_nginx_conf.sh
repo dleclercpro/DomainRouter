@@ -3,86 +3,69 @@
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
 
-# Paths relative to the script location
+# Ports
+PORT_HTTP=80
+PORT_HTTPS=443
+
+# Paths
 ENV_FILE="$SCRIPT_DIR/../.env"
-STREAM_PLACEHOLDER="$SCRIPT_DIR/stream_blocks_placeholder"
-STREAM_TEMPLATE_CONF="$SCRIPT_DIR/../Conf/nginx.stream.template.conf"
+HTTP_CONF="$SCRIPT_DIR/../Conf/http_blocks.conf"
+STREAM_CONF="$SCRIPT_DIR/../Conf/stream_blocks.conf"
 NGINX_FINAL_CONF="$SCRIPT_DIR/../Conf/nginx.conf"
 
+# Create files for HTTP and Stream configurations
+echo "" > $HTTP_CONF
+echo "" > $STREAM_CONF
 
-
-# Create an empty placeholder file for Stream blocks
-echo "" > $STREAM_PLACEHOLDER
-
-# Start with a basic NGINX configuration
-# Set up a global HTTP to HTTPS redirection
-echo "events {}"                                        > $NGINX_FINAL_CONF
-echo "http {"                                          >> $NGINX_FINAL_CONF
-echo "    include /etc/nginx/mime.types;"              >> $NGINX_FINAL_CONF
-echo "    server {"                                    >> $NGINX_FINAL_CONF
-echo "        listen 80 default_server;"               >> $NGINX_FINAL_CONF
-echo "        server_name _;"                          >> $NGINX_FINAL_CONF
-echo "        return 301 https://\$host\$request_uri;" >> $NGINX_FINAL_CONF
-echo "    }"                                           >> $NGINX_FINAL_CONF
-echo "}"                                               >> $NGINX_FINAL_CONF
-echo "stream {"                                        >> $NGINX_FINAL_CONF
-echo "#PLACEHOLDER_STREAM"                             >> $NGINX_FINAL_CONF
-echo "    server {"                                    >> $NGINX_FINAL_CONF
-echo "        listen 443;"                             >> $NGINX_FINAL_CONF
-echo "        ssl_preread on;"                         >> $NGINX_FINAL_CONF
-echo "        proxy_pass \$ssl_preread_server_name;"   >> $NGINX_FINAL_CONF
-echo "    }"                                           >> $NGINX_FINAL_CONF
-echo "}"                                               >> $NGINX_FINAL_CONF
-
-
-
-# Function to replace a placeholder in a file with the contents of another file
-replace_placeholder_with_file_content() {
-    local placeholder=$1
-    local content_file=$2
-    local target_file=$3
-
-    # Prepare the contents of the file for insertion
-    # Escape backslashes, forward slashes, and & characters
-    local content=$(awk '{gsub(/\\/,"\\\\"); gsub(/\//,"\\/"); gsub(/&/,"\\&"); printf("%s\\n", $0)}' "$content_file")
-
-    # Use sed to replace the placeholder with the prepared content
-    if [[ "$(uname)" == "Darwin" ]]; then
-        # MacOS (BSD sed)
-        sed -i '' "s/$placeholder/$content/" "$target_file"
-    else
-        # Linux (GNU sed)
-        sed -i "s/$placeholder/$content/" "$target_file"
-    fi
-}
-
-# Function to generate upstream block for the Stream context
-generate_stream_upstream_block() {
+# Function to generate HTTP server blocks
+generate_http_server_block() {
     local domain=$1
-    local port=$2
-    local temp=$(mktemp)
+    local service=$2
 
-    # Replace placeholders in template
-    sed "s/{{SUB_DOMAIN}}/$domain/g; s/{{PORT}}/$port/g" $STREAM_TEMPLATE_CONF > $temp
-
-    # Append to the Stream placeholder file
-    cat $temp >> $STREAM_PLACEHOLDER
-
-    # Clean up
-    rm $temp
+    # HTTP server block
+    echo "server {"                                                              >> $HTTP_CONF
+    echo "    listen $PORT_HTTP;"                                                >> $HTTP_CONF
+    echo "    server_name $domain;"                                              >> $HTTP_CONF
+    echo "    location / {"                                                      >> $HTTP_CONF
+    echo "        proxy_pass http://$service:$PORT_HTTP;"                        >> $HTTP_CONF
+    echo "        proxy_set_header Host \$host;"                                 >> $HTTP_CONF
+    echo "        proxy_set_header X-Real-IP \$remote_addr;"                     >> $HTTP_CONF
+    echo "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;" >> $HTTP_CONF
+    echo "        proxy_set_header X-Forwarded-Proto \$scheme;"                  >> $HTTP_CONF
+    echo "    }"                                                                 >> $HTTP_CONF
+    echo "}"                                                                     >> $HTTP_CONF
 }
 
+# Function to generate Stream server block for HTTPS
+generate_stream_server_block() {
+    local service=$1
 
+    # HTTPS Stream server block
+    echo "server {"                             >> $STREAM_CONF
+    echo "    listen $PORT_HTTPS;"              >> $STREAM_CONF
+    echo "    ssl_preread on;"                  >> $STREAM_CONF
+    echo "    proxy_pass $service:$PORT_HTTPS;" >> $STREAM_CONF
+    echo "}"                                    >> $STREAM_CONF
+}
 
-# Read from .env file and generate upstream blocks
-while IFS='=' read -r domain port || [[ -n "$domain" ]]; do
-    if [[ ! -z "$domain" && ! -z "$port" ]]; then
-        generate_stream_upstream_block $domain $port
+# Read from .env file and generate server blocks
+# Read from .env file and generate server blocks
+while IFS='=' read -r domain service || [[ -n "$domain" ]]; do
+    if [[ ! -z "$domain" && ! -z "$service" ]]; then
+        generate_http_server_block $domain $service
+        generate_stream_server_block $service
     fi
 done < "$ENV_FILE"
 
-# Replace the stream placeholder with the contents of the Stream placeholder
-replace_placeholder_with_file_content '#PLACEHOLDER_STREAM' $STREAM_PLACEHOLDER $NGINX_FINAL_CONF
+# Start with a basic NGINX configuration with placeholders for HTTP and Stream contexts
+echo "events {}" >  $NGINX_FINAL_CONF
+echo "http {"    >> $NGINX_FINAL_CONF
+cat $HTTP_CONF   >> $NGINX_FINAL_CONF
+echo "}"         >> $NGINX_FINAL_CONF
+echo "stream {"  >> $NGINX_FINAL_CONF
+cat $STREAM_CONF >> $NGINX_FINAL_CONF
+echo "}"         >> $NGINX_FINAL_CONF
 
-# Clean up the placeholder file
-rm $STREAM_PLACEHOLDER
+# Clean up the temporary configuration files
+rm $HTTP_CONF
+rm $STREAM_CONF
