@@ -7,10 +7,12 @@ services:
     ports:
       - 443:443 # HTTPS
       - 80:80   # HTTP
+    networks:
+      - custom
     volumes:
       - ./Conf/nginx.conf:/etc/nginx/nginx.conf:ro
 
 networks:
-  router-network: # Custom network to communicate with external services/containers
+  # Custom network to communicate with external services/containers
+  custom:
     external: true
-    name: router-network
