@@ -11,6 +11,6 @@ services:
       - ./Conf/nginx.conf:/etc/nginx/nginx.conf:ro
 
 networks:
-  default:
-    external:
-      name: router-network
+  router-network: # Custom network to communicate with external services/containers
+    external: true
+    name: router-network
