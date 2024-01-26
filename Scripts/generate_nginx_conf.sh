@@ -29,7 +29,7 @@ generate_http_server_block() {
     echo "    listen $PORT_HTTP;"                                                >> $HTTP_CONF
     echo "    server_name $domain;"                                              >> $HTTP_CONF
     echo "    location / {"                                                      >> $HTTP_CONF
-    echo "        proxy_pass http://$service:$PORT_HTTP;"                        >> $HTTP_CONF
+    echo "        proxy_pass http://$service;"                                   >> $HTTP_CONF
     echo "        proxy_set_header Host \$host;"                                 >> $HTTP_CONF
     echo "        proxy_set_header X-Real-IP \$remote_addr;"                     >> $HTTP_CONF
     echo "        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;" >> $HTTP_CONF
@@ -38,48 +38,60 @@ generate_http_server_block() {
     echo "}"                                                                     >> $HTTP_CONF
 }
 
-# Function to generate mapping for Stream server block
-generate_stream_map_block() {
+# Function to generate Stream server blocks
+generate_stream_server_block() {
     local domain=$1
     local service=$2
 
-    echo "$domain $service:$PORT_HTTPS;" >> $STREAM_MAP_CONF
+    # Stream server block
+    echo "server {"                 >> $STREAM_CONF
+    echo "    listen $PORT_HTTPS;"  >> $STREAM_CONF
+    echo "    server_name $domain;" >> $STREAM_CONF
+    echo "    proxy_pass $service;" >> $STREAM_CONF
+    echo "    ssl_preread on;"      >> $STREAM_CONF
+    echo "}"                        >> $STREAM_CONF
 }
 
-# Function to generate Stream server block for HTTPS
-generate_stream_server_block() {
-    # Stream server block with resolver and map
-    echo "resolver 127.0.0.11 valid=30s;"         > $STREAM_CONF
-    echo "map \$ssl_preread_server_name \$name {" >> $STREAM_CONF
-    cat  $STREAM_MAP_CONF                         >> $STREAM_CONF
-    echo "}"                                      >> $STREAM_CONF
-    echo ""                                       >> $STREAM_CONF
-    echo "server {"                               >> $STREAM_CONF
-    echo "    listen $PORT_HTTPS;"                >> $STREAM_CONF
-    echo "    ssl_preread on;"                    >> $STREAM_CONF
-    echo "    proxy_pass \$name;"                 >> $STREAM_CONF
-    echo "}"                                      >> $STREAM_CONF
-}
+# Generate the NGINX configuration
+echo "events {}" > $NGINX_FINAL_CONF
+echo "http {"    >> $NGINX_FINAL_CONF
 
-# Read from .env file and generate server blocks
+# Read from .env file and generate server blocks for HTTP
 while IFS='=' read -r domain service || [[ -n "$domain" ]]; do
+    # Remove carriage return if present
+    service=$(echo "$service" | tr -d '\r')
     if [[ ! -z "$domain" && ! -z "$service" ]]; then
         generate_http_server_block $domain $service
-        generate_stream_map_block $domain $service
     fi
 done < "$ENV_FILE"
 
-# Generate final stream block
-generate_stream_server_block
+# Append the HTTP server blocks to the NGINX configuration
+cat $HTTP_CONF >> $NGINX_FINAL_CONF
 
-# Start with a basic NGINX configuration with placeholders for HTTP and Stream contexts
-echo "events {}" >  $NGINX_FINAL_CONF
-echo "http {"    >> $NGINX_FINAL_CONF
-cat $HTTP_CONF   >> $NGINX_FINAL_CONF
-echo "}"         >> $NGINX_FINAL_CONF
-echo "stream {"  >> $NGINX_FINAL_CONF
-cat $STREAM_CONF >> $NGINX_FINAL_CONF
-echo "}"         >> $NGINX_FINAL_CONF
+# Close the HTTP section and start the Stream section
+echo "}"                                          >> $NGINX_FINAL_CONF
+echo "stream {"                                   >> $NGINX_FINAL_CONF
+echo "    resolver 127.0.0.11 valid=30s;"         >> $NGINX_FINAL_CONF
+echo "    map \$ssl_preread_server_name \$name {" >> $NGINX_FINAL_CONF
+
+# Read from .env file and populate the Stream map
+while IFS='=' read -r domain service || [[ -n "$domain" ]]; do
+    # Remove carriage return if present
+    service=$(echo "$service" | tr -d '\r')
+    if [[ ! -z "$domain" && ! -z "$service" ]]; then
+        echo "        $domain $service:443;" >> $NGINX_FINAL_CONF
+    fi
+done < "$ENV_FILE"
+
+# Close the Stream map section and define the Stream server
+echo "    }"                      >> $NGINX_FINAL_CONF
+echo ""                           >> $NGINX_FINAL_CONF
+echo "    server {"               >> $NGINX_FINAL_CONF
+echo "        listen 443;"        >> $NGINX_FINAL_CONF
+echo "        ssl_preread on;"    >> $NGINX_FINAL_CONF
+echo "        proxy_pass \$name;" >> $NGINX_FINAL_CONF
+echo "    }"                      >> $NGINX_FINAL_CONF
+echo "}"                          >> $NGINX_FINAL_CONF
 
 # Clean up the temporary configuration files
 rm $HTTP_CONF
